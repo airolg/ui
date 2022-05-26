@@ -1,0 +1,156 @@
+Intro
+In this article we’ll observe another test added to https://db-benchmarks.com/ - 10+ million standard HTTP logs collected by Nginx on ecommerce website zanbil.ir.
+
+Data collection
+We found the data collection on https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs and found it very interesting to make a test with since the dataset represents a very standard nginx http access log. Here’s an example:
+54.36.149.41 - - [22/Jan/2019:03:56:14 +0330] "GET /filter/27|13%20%D9%85%DA%AF%D8%A7%D9%BE%DB%8C%DA%A9%D8%B3%D9%84,27|%DA%A9%D9%85%D8%AA%D8%B1%20%D8%A7%D8%B2%205%20%D9%85%DA%AF%D8%A7%D9%BE%DB%8C%DA%A9%D8%B3%D9%84,p53 HTTP/1.1" 200 30577 "-" "Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)" "-"
+31.56.96.51 - - [22/Jan/2019:03:56:16 +0330] "GET /image/60844/productModel/200x200 HTTP/1.1" 200 5667 "https://www.zanbil.ir/m/filter/b113" "Mozilla/5.0 (Linux; Android 6.0; ALE-L21 Build/HuaweiALE-L21) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.158 Mobile Safari/537.36" "-"
+31.56.96.51 - - [22/Jan/2019:03:56:16 +0330] "GET /image/61474/productModel/200x200 HTTP/1.1" 200 5379 "https://www.zanbil.ir/m/filter/b113" "Mozilla/5.0 (Linux; Android 6.0; ALE-L21 Build/HuaweiALE-L21) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.158 Mobile Safari/537.36" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:17 +0330] "GET /image/14925/productModel/100x100 HTTP/1.1" 200 1696 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+91.99.72.15 - - [22/Jan/2019:03:56:17 +0330] "GET /product/31893/62100/%D8%B3%D8%B4%D9%88%D8%A7%D8%B1-%D8%AE%D8%A7%D9%86%DA%AF%DB%8C-%D9%BE%D8%B1%D9%86%D8%B3%D9%84%DB%8C-%D9%85%D8%AF%D9%84-PR257AT HTTP/1.1" 200 41483 "-" "Mozilla/5.0 (Windows NT 6.2; Win64; x64; rv:16.0)Gecko/16.0 Firefox/16.0" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:17 +0330] "GET /image/23488/productModel/150x150 HTTP/1.1" 200 2654 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:18 +0330] "GET /image/45437/productModel/150x150 HTTP/1.1" 200 3688 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:18 +0330] "GET /image/576/article/100x100 HTTP/1.1" 200 14776 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+66.249.66.194 - - [22/Jan/2019:03:56:18 +0330] "GET /filter/b41,b665,c150%7C%D8%A8%D8%AE%D8%A7%D8%B1%D9%BE%D8%B2,p56 HTTP/1.1" 200 34277 "-" "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:18 +0330] "GET /image/57710/productModel/100x100 HTTP/1.1" 200 1695 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+207.46.13.136 - - [22/Jan/2019:03:56:18 +0330] "GET /product/10214 HTTP/1.1" 200 39677 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+40.77.167.129 - - [22/Jan/2019:03:56:19 +0330] "GET /image/578/article/100x100 HTTP/1.1" 200 9831 "-" "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)" "-"
+
+Probably most of web sites in the Internet have a similar log. Many website admins and devops want to be able to process logs like this to do filtering and analytics.
+
+After parsing by the framework there are 11 fields in the log:
+
+7 string fields
+4 integer fields
+The whole list of fields and their data types is:
+
+"properties": {
+  "remote_addr": {"type": "text"},
+  "remote_user": {"type": "text"},
+  "runtime": {"type": "long"},
+  "time_local": {"type": "long"},
+  "request_type": {"type": "text"},
+  "request_path": {
+    "type": "text",
+    "fields": {
+      "raw": {
+        "type": "keyword"
+      }
+    }
+  },
+  "request_protocol": {"type": "text"},
+  "status": {"type": "long"},
+  "size": {"type": "long"},
+  "referer": {"type": "text"},
+  "usearagent": {"type": "text"}
+}
+
+We preliminarily convert the raw log to CSV so it’s easier to load to different databases and search engines.
+
+Databases
+So far we have made this test available for 3 databases:
+
+Clickhouse - a powerful OLAP database,
+Elasticsearch - general purpose “search and analytics engine”,
+Manticore Search - “database for search”, Elasticsearch alternative.
+We’ve tried to make as little changes to database default settings as possible to not give either of them an unfair advantage:
+
+Clickhouse: no tuning , just CREATE TABLE ... ENGINE = MergeTree() ORDER BY id and standard clickhouse-server docker image.
+Elasticsearch: we test in 2 modes:
+with no tuning at all which is probably what most users do
+with number of shards equal to the number of CPU cores on the server, so Elasticsearch can utilize the CPUs more efficiently for lower response time, since as said in Elasticsearch official guide “Each shard runs the search on a single CPU thread”. The dataset size is only 3.5 GB, so it’s not clear if it’s required or not, but that’s why we are testing it.
+bootstrap.memory_lock=true since as said on https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#_disable_swapping it needs to be done for performance.
+Manticore Search - no tuning , just a plain index built up from the CSV.
+we test Manticore’s default row-wise storage
+and columnar storage since Elasticsearch and Clickhouse don’t provide row-oriented stores and it may be more fair to compare with Manticore running in this mode.
+We’ve also configured the databases to not use any internal caches:
+
+Clickhouse:
+SYSTEM DROP MARK CACHE, SYSTEM DROP UNCOMPRESSED CACHE, SYSTEM DROP COMPILED EXPRESSION CACHE after each query .
+Elasticsearch:
+"index.queries.cache.enabled": false in its configuration
+/_cache/clear?request=true&query=true&fielddata=true after each query .
+For Manticore Search in its configuration file:
+qcache_max_bytes = 0
+docstore_cache_size = 0
+Operating system:
+we do echo 3 > /proc/sys/vm/drop_caches; sync before each new query
+Queries
+The queries are mostly analytical that do filtering, sorting and grouping, but we’ve also included one full-text query which searches in the request URL:
+
+ 1
+ 2
+ 3
+ 4
+ 5
+ 6
+ 7
+ 8
+ 9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+[
+"select avg(size) avg_size, status from logs10m group by status order by avg_size desc limit 20",
+{
+  "manticoresearch": "select count(*) as cnt, avg(runtime), avg(size) from logs10m where match('@request_path settings logo') order by cnt desc limit 20",
+  "elasticsearch": "select count(*) as cnt, avg(runtime), avg(size) from logs10m where query('request_path settings logo') order by cnt desc limit 20",
+  "clickhouse": "select count(*) as cnt, avg(runtime), avg(size) from logs10m where (match(request_path, '(?i)(\\W|\\A)settings\\Wlogo(\\W|\\z)') or match(request_path, '(?i)(\\W|\\A)logo\\Wsettings(\\W|\\z)')) limit 20 FORMAT JSON"
+},
+"select count(*) from logs10m",
+"select count(*), avg(runtime) from logs10m group by status limit 20",
+"select count(distinct request_path) cnt_distinct, status from logs10m group by status order by cnt_distinct desc limit 20",
+"select min(size) min_size, status from logs10m group by status order by min_size desc, status desc limit 20",
+"select request_path, runtime, status, size from logs10m where size > 0 order by runtime desc, size asc limit 20",
+"select request_path, runtime, status, size, time_local from logs10m order by runtime desc, size desc, time_local desc limit 20",
+"select status, count(*) from logs10m group by status order by count(*) desc limit 20",
+"select status, sum(runtime) from logs10m group by status order by count(*) desc limit 20",
+"select count(*) as cnt, request_path, avg(runtime), avg(size) from logs10m group by request_path order by cnt desc limit 20",
+"select request_path, count(*), avg(runtime) runtime_avg, avg(size) from logs10m group by request_path order by runtime_avg desc limit 20"
+]
+
+Results
+You can find all the results on the results page by selecting “Test: logs10m”.
+
+Remember that the only high quality metric is “Fast avg” since it guarantees low coefficient of variation and high queries count conducted for each query. The other 2 (“Fastest” and “Slowest”) are provided with no guarantee since:
+
+Slowest - is a single attempt result, in most cases the very first coldest query. Even though we purge OS cache before each cold query it can’t be considered stable. So it can be used for informational purposes and is greyed out in the below summary.
+Fastest - just the very fastest result, it should be in most cases similar to the “Fast avg” metric, but can be more volatile from run to run.
+Remember the tests including the results are 100% transparent as well as everything in this project, so:
+
+you can use the test framework to learn how they were made
+and find raw test results in the results directory.
+Unlike other less transparent and less objective benchmarks we are not making any conclusions, we are just leaving screenshots of the results here:
+
+3 competitors with no tuning at once
+
+Unfortunately Elasticsearch timed out for 2 queries, hence they were excluded from the final score calculation.
+
+Elasticsearch with no tuning vs Manticore Search (default row-wise storage)
+Unfortunately Elasticsearch timed out for 2 queries, hence they were excluded from the final score calculation.
+
+Elasticsearch with no tuning vs tuned
+
+Unfortunately Elasticsearch timed out for 2 queries, hence they were excluded from the final score calculation.
+
+Elasticsearch tuned vs Manticore Search (default row-wise storage)
+
+Unfortunately Elasticsearch timed out for 2 queries, hence they were excluded from the final score calculation.
+
+Elasticsearch tuned vs Manticore Search (columnar storage)
+
+Unfortunately Elasticsearch timed out for 2 queries, hence they were excluded from the final score calculation.
+
+Clickhouse vs Manticore Search (columnar storage)
+
+Manticore Search row-wise vs columnar
+
+Disclaimer
+The author of this test and the test framework is a member of Manticore Search core team and the test was initially made to compare Manticore Search with Elasticsearch, but as shown above and can be verified in the open source code and by running the same test yourself Manticore Search wasn’t given any unfair advantage, so the test can be considered unprejudiced. However, if something is missing or wrong (i.e. non-objective) in the test feel free to make a pull request or an issue on Github . Your take is appreciated! Thank you for spending your time reading this!
